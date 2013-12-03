@@ -1,0 +1,8 @@
+*.class
+*.dll
+*.log
+*.log*
+bin/
+gen/
+node_modules/
+.settings/
