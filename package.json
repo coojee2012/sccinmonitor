@@ -11,6 +11,8 @@
     "ejs": "*",
     "nami":">=0.5",
     "log4js":">=0.3",
+    "eventproxy":">=0.2.6",
+    "async":">=0.2.9",
     "express-partials":"*"
   }
 }

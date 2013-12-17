@@ -1,18 +1,17 @@
 var log4js = require('log4js');
-var oids=require('./usefuloids.js').oids;
-console.log(oids.windows.microsoft);
+var oids = require('./usefuloids.js').oids;
+var async = require('async');
+
+//console.log(oids.windows.microsoft);
 //log the cheese logger messages to a file, and the console ones as well.
 log4js.configure({
-    appenders: [
-        {
-            type: "file",
-            filename: "cheese.log",
-            category: [ 'cheese','console' ]
-        },
-        {
-            type: "console"
-        }
-    ],
+    appenders: [{
+        type: "file",
+        filename: "cheese.log",
+        category: ['cheese', 'console']
+    }, {
+        type: "console"
+    }],
     replaceConsole: true
 });
 
@@ -22,9 +21,9 @@ var logger = log4js.getLogger('cheese');
 //via the levels field.
 logger.setLevel('ERROR');
 
-var snmp = require ("net-snmp");
-var version=snmp.Version1;
-var options={
+var snmp = require("net-snmp");
+var version = snmp.Version1;
+var options = {
     port: 161,
     retries: 1,
     timeout: 5000,
@@ -32,53 +31,209 @@ var options={
     trapPort: 162,
     version: snmp.Version1
 };
-var session = snmp.createSession ("127.0.0.1", "public",options);
-
-console.log(session);
+var session = snmp.createSession("127.0.0.1", "public", options);
 
 
+var GetCpuInfo=function(){
+async.waterfall([
+    function(cb) { 
+    var tableoid = oids.windows.host.children.hrDevice.children.hrProcessorTable.oid; 
+    session.table (tableoid, 20, cb);
+    },
+    function(n, cb) {
+        var StorageRamOid = oids.windows.host.children.hrStorageTypes.children.hrStorageRam.oid; 
+        var cpus=[];
+        for(var i in n){                       
+             cpus.push(n[i]["2"]);                      
+        }
+        cb(null,cpus);
+         }
+], function (err, result) {
+    if(err){
+
+    }else{
+        //console.log('内存总量:'+result.total);
+        for(var i=0;i<result.length;i++){
+            console.log("CPU"+i+":"+result[i]+"%");
+        }
+    }
+   
+});
+
+}
+
+//GetCpuInfo();
 
 
 
 
+var GetMemInfo=function(){
+async.waterfall([
+    function(cb) { 
+    var tableoid = oids.windows.host.children.hrStorage.children.hrStorageTable.oid; 
+    session.table (tableoid, 20, cb);
+    },
+    function(n, cb) {
+        var StorageRamOid = oids.windows.host.children.hrStorageTypes.children.hrStorageRam.oid; 
+        var total=0;
+        var used=0;
+        for(var i in n){
+            if(n[i]["2"]== StorageRamOid)
+            {
+             total+= n[i]["5"]*n[i]["4"];
+             used+=  n[i]["6"]*n[i]["4"];
+            }
+        }
+        cb(null,{total:total/(1024*1024)+' MB',used:used/(1024*1024)+' MB'});
+         }
+], function (err, result) {
+    if(err){
 
-oids = ["1.3.6.1.4.1.311.1.7.3.1.51.0", "1.3.6.1.2.1.1.2.0","1.3.6.1.2.1.1.3.0","1.3.6.1.2.1.1.7.0","1.3.6.1.2.1.4.1.0"];
-oids=["1.3.6.1.3.60.1.1.2.1"];
-oids=["1.3.6.1.2.1.25.1.1.0","1.3.6.1.2.1.25.1.2.0","1.3.6.1.2.1.25.1.3.0",
-"1.3.6.1.2.1.25.1.4.0","1.3.6.1.2.1.25.1.5.0","1.3.6.1.2.1.25.1.6.0","1.3.6.1.2.1.25.1.7.0",
-"1.3.6.1.2.1.25.2.2.0"];
-//oids=["1.3.6.1.2.1.1.1.0","1.3.6.1.2.1.1.2.0","1.3.6.1.2.1.1.3.0","1.3.6.1.2.1.1.4.0","1.3.6.1.2.1.1.5.0","1.3.6.1.2.1.1.6.0","1.3.6.1.2.1.1.7.0"];
-session.get (oids, function (error, varbinds) {
+    }else{
+        console.log('内存总量:'+result.total);
+        console.log('内存已用:'+result.used);
+    }
+   
+});
+}
+//GetMemInfo();
+
+
+var GetHardDiskInfo=function(){
+
+async.waterfall([
+    function(cb) { 
+    var tableoid = oids.windows.host.children.hrStorage.children.hrStorageTable.oid; 
+    session.table (tableoid, 20, cb);
+    },
+    function(n, cb) { 
+        var total=0;
+        var used=0;
+        var FixStorageOid=oids.windows.host.children.hrStorageTypes.children.hrStorageFixedDisk.oid; 
+        for(var i in n){
+            if(n[i]["2"]=='1.3.6.1.2.1.25.2.1.4')
+            {
+             total+= n[i]["5"]*n[i]["4"];
+             used+=  n[i]["6"]*n[i]["4"];
+            }
+        }
+        cb(null,{total:total/1000/1000/1000+' G',used:used/1000/1000/1000+' G'});
+         }
+], function (err, result) {
+     if(err){
+
+    }else{
+        console.log('硬盘总量:'+result.total);
+        console.log('硬盘已用:'+result.used);
+    }
+});
+
+}
+//GetHardDiskInfo();
+
+async.whilst(
+    function() { return 0 < 1 },
+    function(cb) {
+        GetCpuInfo();
+        GetMemInfo();
+        GetHardDiskInfo();
+        setTimeout(cb, 1000);
+    },
+    function(err) {
+        // 3s have passed
+        console.log('1.1 err: ', err); // -> undefined
+    }
+);
+
+
+oid = "1.3.6.1.2.1.2.2";
+oid = "1.3.6.1.4.1.2021.10";
+
+function sortInt(a, b) {
+    if (a > b)
+        return 1;
+    else if (b > a)
+        return -1;
+    else
+        return 0;
+}
+
+function responseCb(error, table) {
+
     if (error) {
-        console.log (error);
+        console.error(error.toString());
+    } else {
+        // This code is purely used to print rows out in index order,
+        // ifIndex's are integers so we'll sort them numerically using
+        // the sortInt() function above
+        var indexes = [];
+        for (index in table)
+            indexes.push(parseInt(index));
+        indexes.sort(sortInt);
+
+        // Use the sorted indexes we've calculated to walk through each
+        // row in order
+        for (var i = 0; i < indexes.length; i++) {
+            // Like indexes we sort by column, so use the same trick here,
+            // some rows may not have the same columns as other rows, so
+            // we calculate this per row
+            var columns = [];
+            for (column in table[indexes[i]])
+                columns.push(parseInt(column));
+            columns.sort(sortInt);
+
+            // Print index, then each column indented under the index
+            logger.error("row for index = " + indexes[i]);
+            for (var j = 0; j < columns.length; j++) {
+                logger.error("   column " + columns[j] + " = " + table[indexes[i]][columns[j]]);
+            }
+        }
+    }
+}
+
+
+// The maxRepetitions argument is optional, and will be ignored unless using
+// SNMP verison 2c
+//session.table ("1.3.6.1.2.1.2.2", maxRepetitions, responseCb);
+return;
+
+oids = ["1.3.6.1.4.1.311.1.7.3.1.51.0", "1.3.6.1.2.1.1.2.0", "1.3.6.1.2.1.1.3.0", "1.3.6.1.2.1.1.7.0", "1.3.6.1.2.1.4.1.0"];
+oids = ["1.3.6.1.3.60.1.1.2.1"];
+oids = ["1.3.6.1.2.1.25.1.1.0", "1.3.6.1.2.1.25.1.2.0", "1.3.6.1.2.1.25.1.3.0",
+    "1.3.6.1.2.1.25.1.4.0", "1.3.6.1.2.1.25.1.5.0", "1.3.6.1.2.1.25.1.6.0", "1.3.6.1.2.1.25.1.7.0",
+    "1.3.6.1.2.1.25.2.2.0"
+];
+//oids=["1.3.6.1.2.1.1.1.0","1.3.6.1.2.1.1.2.0","1.3.6.1.2.1.1.3.0","1.3.6.1.2.1.1.4.0","1.3.6.1.2.1.1.5.0","1.3.6.1.2.1.1.6.0","1.3.6.1.2.1.1.7.0"];
+session.get(oids, function(error, varbinds) {
+    if (error) {
+        console.log(error);
     } else {
         for (var i = 0; i < varbinds.length; i++)
             if (snmp.isVarbindError(varbinds[i]))
-                console.log (snmp.varbindError (varbinds[i]));
-            else
-            {
+                console.log(snmp.varbindError(varbinds[i]));
+            else {
                 console.log(varbinds[i]);
-                console.log (varbinds[i].oid + " = " + varbinds[i].value);
+                console.log(varbinds[i].oid + " = " + varbinds[i].value);
             }
     }
 });
 
-session.trap (snmp.TrapType.LinkDown, function (error) {
+session.trap(snmp.TrapType.LinkDown, function(error) {
     if (error)
-        console.log (error);
+        console.log(error);
 });
 
-function doneCb (error) {
+function doneCb(error) {
     if (error)
-        console.error (error.toString ());
+        console.error(error.toString());
 }
 
-function feedCb (varbinds) {
+function feedCb(varbinds) {
     for (var i = 0; i < varbinds.length; i++) {
-        if (snmp.isVarbindError (varbinds[i]))
-            console.error (snmp.varbindError (varbinds[i]));
+        if (snmp.isVarbindError(varbinds[i]))
+            console.error(snmp.varbindError(varbinds[i]));
         else
-            logger.error (varbinds[i].oid + "|" + varbinds[i].value);
+            logger.error(varbinds[i].oid + "|" + varbinds[i].value);
     }
 }
 
@@ -86,31 +241,31 @@ var maxRepetitions = 20;
 //session.walk (oids[1], maxRepetitions, feedCb, doneCb);
 
 
- oids = ["1.3.6.1.2.1.311"];
+oids = ["1.3.6.1.2.1.311"];
 
 //session.getNext (oids, getnext);
 
-function getnext (error, varbinds) {
+function getnext(error, varbinds) {
     if (error) {
-        console.error (error.toString ());
+        console.error(error.toString());
     } else {
         for (var i = 0; i < varbinds.length; i++) {
             // for version 1 we can assume all OIDs were successful
-            console.log (varbinds[i].oid + "|" + varbinds[i].value);
+            console.log(varbinds[i].oid + "|" + varbinds[i].value);
 
             // for version 2c we must check each OID for an error condition
-            if (snmp.isVarbindError (varbinds[i]))
-                console.error (snmp.varbindError (varbinds[i]));
-            else{
-                 console.log("类型：",varbinds[i].type);
-                 console.log("type:",snmp.ObjectType.OID);
-                 console.log("值：",varbinds[i].value);  
-                if(varbinds[i].type==snmp.ObjectType.OID){
-                console.log("type:",snmp.ObjectType.OID);
-                 //session.getNext (varbinds[i].value, getnext);
-                }else{
-                console.log (varbinds[i].oid + "|" + varbinds[i].value);
-            }
+            if (snmp.isVarbindError(varbinds[i]))
+                console.error(snmp.varbindError(varbinds[i]));
+            else {
+                console.log("类型：", varbinds[i].type);
+                console.log("type:", snmp.ObjectType.OID);
+                console.log("值：", varbinds[i].value);
+                if (varbinds[i].type == snmp.ObjectType.OID) {
+                    console.log("type:", snmp.ObjectType.OID);
+                    //session.getNext (varbinds[i].value, getnext);
+                } else {
+                    console.log(varbinds[i].oid + "|" + varbinds[i].value);
+                }
             }
         }
     }
@@ -119,65 +274,63 @@ function getnext (error, varbinds) {
 
 
 var oid = "1.3.6.1.2.1.1";
-    oid="1.3.6.1.4";
-    oid="1.3.6.1.4.1.311.1";
-    oid="1.3.6.1.4.1.77.1.1";
-    oid="1.3.6.1";
-    oid="1.3.6.1.4.1.311.1.7.3.1"; //httpd
-    oid="1.3.6.1.4.1.311"//mssql
-    oid="1.3.6.1.2.1.25.1";
-    oid="1.3.6.1.2.1.25.2";
-    oid="1.3.6.1.2.1.25.2.2.0";
-    oid="1.3.6.1.2.1.25.3.3.1";//cpu 列表
-   // oid="1.3.6.1.2.1.25.2.3.1";
-    //oid="1.3.6.1.2.1.25.2.3.1.6";//磁盘使用列表
-    //oid="1.3.6.1.2.1.25.2.3.1.5";//磁盘大小列表
-    //oid="1.3.6.1.2.1.25.2.3.1.3";//磁盘信息列表
-    //oid="1.3.6.1.2.1.25.2.3.1.1";//磁盘序号
-    //oid="1.3.6.1.2.1.25.2.1.4";
-var mywindows={
-    oid:'1.3.6.1',
-    value:'',
-    children:[]
+oid = "1.3.6.1.4";
+oid = "1.3.6.1.4.1.311.1";
+oid = "1.3.6.1.4.1.77.1.1";
+oid = "1.3.6.1";
+oid = "1.3.6.1.4.1.311.1.7.3.1"; //httpd
+oid = "1.3.6.1.4.1.311" //mssql
+oid = "1.3.6.1.2.1.25.1";
+oid = "1.3.6.1.2.1.25.2";
+oid = "1.3.6.1.2.1.25.2.2.0";
+oid = "1.3.6.1.2.1.25.3.3.1"; //cpu 列表
+// oid="1.3.6.1.2.1.25.2.3.1";
+//oid="1.3.6.1.2.1.25.2.3.1.6";//磁盘使用列表
+//oid="1.3.6.1.2.1.25.2.3.1.5";//磁盘大小列表
+//oid="1.3.6.1.2.1.25.2.3.1.3";//磁盘信息列表
+//oid="1.3.6.1.2.1.25.2.3.1.1";//磁盘序号
+//oid="1.3.6.1.2.1.25.2.1.4";
+var mywindows = {
+    oid: '1.3.6.1',
+    value: '',
+    children: []
 };
 
-function doneCbsubTree (error) {
+function doneCbsubTree(error) {
     if (error)
-        console.error (error.toString ());
+        console.error(error.toString());
 }
 
-function feedCbsubTree (varbinds) {
+function feedCbsubTree(varbinds) {
     for (var i = 0; i < varbinds.length; i++) {
-        if (snmp.isVarbindError (varbinds[i]))
-            logger.error (snmp.varbindError (varbinds[i]));
-        else{
+        if (snmp.isVarbindError(varbinds[i]))
+            logger.error(snmp.varbindError(varbinds[i]));
+        else {
 
-        if(varbinds[i].type==snmp.ObjectType.OID){
-         //console.log("类型：",varbinds[i].type);
-         // console.log("值：",varbinds[i].value);  
-         // var session2 = snmp.createSession ("127.0.0.1", "public",options);
-         logger.error(varbinds[i].value);
-         logger.error("==>");
-          session.subtree (varbinds[i].value, maxRepetitions, feedCbsubTree, doneCbsubTree);
-          var newoid={};
-            newoid.oid=varbinds[i].oid;
-            newoid.value=varbinds[i].value;
-            newoid.children=[];
-            mywindows.children.push(newoid);
+            if (varbinds[i].type == snmp.ObjectType.OID) {
+                //console.log("类型：",varbinds[i].type);
+                // console.log("值：",varbinds[i].value);  
+                // var session2 = snmp.createSession ("127.0.0.1", "public",options);
+                logger.error(varbinds[i].value);
+                logger.error("==>");
+                session.subtree(varbinds[i].value, maxRepetitions, feedCbsubTree, doneCbsubTree);
+                var newoid = {};
+                newoid.oid = varbinds[i].oid;
+                newoid.value = varbinds[i].value;
+                newoid.children = [];
+                mywindows.children.push(newoid);
+            } else {
+                var newoid = {};
+                newoid.oid = varbinds[i].oid;
+                newoid.value = varbinds[i].value;
+                newoid.children = [];
+                mywindows.children.push(newoid);
+                logger.error(varbinds[i].oid + "|" + varbinds[i].value);
+            }
         }
-        else
-        {
-            var newoid={};
-            newoid.oid=varbinds[i].oid;
-            newoid.value=varbinds[i].value;
-            newoid.children=[];
-            mywindows.children.push(newoid);
-            logger.error(varbinds[i].oid + "|" + varbinds[i].value);
-        }
-    }
-   // if(i == varbinds.length-1 ){
-    //    logger.error(mywindows);
-    //}
+        // if(i == varbinds.length-1 ){
+        //    logger.error(mywindows);
+        //}
     }
 }
 
@@ -189,11 +342,7 @@ function feedCbsubTree (varbinds) {
 
 
 
-
-
-
-
- oids = [
+oids = [
     "1.3.6.1.2.1.1.4.0",
     "1.3.6.1.2.1.1.5.0",
     "1.3.6.1.2.1.2.2.1.2",
@@ -233,75 +382,25 @@ var nonRepeaters = 0;
 
 
 
+
+
+
 oid = "1.3.6.1.2.1.2.2";
-oid = "1.3.6.1.4.1.2021.10";
-
-function sortInt (a, b) {
-    if (a > b)
-        return 1;
-    else if (b > a)
-        return -1;
-    else
-        return 0;
-}
-
-function responseCb (error, table) {
-    
-    if (error) {
-        console.error (error.toString ());
-    } else {
-        // This code is purely used to print rows out in index order,
-        // ifIndex's are integers so we'll sort them numerically using
-        // the sortInt() function above
-        var indexes = [];
-        for (index in table)
-            indexes.push (parseInt (index));
-        indexes.sort (sortInt);
-
-        // Use the sorted indexes we've calculated to walk through each
-        // row in order
-        for (var i = 0; i < indexes.length; i++) {
-            // Like indexes we sort by column, so use the same trick here,
-            // some rows may not have the same columns as other rows, so
-            // we calculate this per row
-            var columns = [];
-            for (column in table[indexes[i]])
-                columns.push (parseInt (column));
-            columns.sort (sortInt);
-
-            // Print index, then each column indented under the index
-            logger.error("row for index = " + indexes[i]);
-            for (var j = 0; j < columns.length; j++) {
-                logger.error ("   column " + columns[j] + " = "
-                        + table[indexes[i]][columns[j]]);
-            }
-        }
-    }
-}
-
-
-// The maxRepetitions argument is optional, and will be ignored unless using
-// SNMP verison 2c
-//session.table ("1.3.6.1.4.1.0", maxRepetitions, responseCb);
-
-
-
- oid = "1.3.6.1.2.1.2.2";
 var columns = [2, 6];
 
 
 
-function responseCb1 (error, table) {
+function responseCb1(error, table) {
     if (error) {
-        console.error (error.toString ());
+        console.error(error.toString());
     } else {
         // This code is purely used to print rows out in index order,
         // ifIndex's are integers so we'll sort them numerically using
         // the sortInt() function above
         var indexes = [];
         for (index in table)
-            indexes.push (parseInt (index));
-        indexes.sort (sortInt);
+            indexes.push(parseInt(index));
+        indexes.sort(sortInt);
 
         // Use the sorted indexes we've calculated to walk through each
         // row in order
@@ -311,16 +410,15 @@ function responseCb1 (error, table) {
             // we calculate this per row
             var columns = [];
             for (column in table[indexes[i]])
-                columns.push (parseInt (column));
-            columns.sort (sortInt);
+                columns.push(parseInt(column));
+            columns.sort(sortInt);
 
             // Print index, then each column indented under the index
-            logger.debug ("row for index = " + indexes[i]);
+            logger.debug("row for index = " + indexes[i]);
             for (var j = 0; j < columns.length; j++) {
-                logger.debug("   column " + columns[j] + " = "
-                        + table[indexes[i]][columns[j]]);
+                logger.debug("   column " + columns[j] + " = " + table[indexes[i]][columns[j]]);
                 //console.log ("   column " + columns[j] + " = "
-                 //       + table[indexes[i]][columns[j]]);
+                //       + table[indexes[i]][columns[j]]);
             }
         }
     }
@@ -331,4 +429,3 @@ function responseCb1 (error, table) {
 // The maxRepetitions argument is optional, and will be ignored unless using
 // SNMP verison 2c
 //session.tableColumns (oid, columns, maxRepetitions, responseCb1);
-
